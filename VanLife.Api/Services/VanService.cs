@@ -1,51 +1,75 @@
+using Microsoft.EntityFrameworkCore;
 using VanLife.Api.Data;
 using VanLife.Api.Models;
 
 namespace VanLife.Api.Services;
 
-public class VanService(InMemoryStore store)
+public class VanService(AppDbContext db)
 {
-    public IEnumerable<VanListItemDto> GetAll(VanCategory? category, decimal? minPrice, decimal? maxPrice)
+    public async Task<PagedResult<VanListItemDto>> GetAll(VanQuery query)
     {
-        var query = store.Vans.AsQueryable();
+        var vans = db.Vans.AsQueryable();
 
-        if (category.HasValue)
+        if (query.Category.HasValue)
         {
-            query = query.Where(v => v.Category == category.Value);
+            vans = vans.Where(v => v.Category == query.Category.Value);
         }
 
-        if (minPrice.HasValue)
+        if (query.MinPrice.HasValue)
         {
-            query = query.Where(v => v.PricePerDay >= minPrice.Value);
+            vans = vans.Where(v => v.PricePerDay >= query.MinPrice.Value);
         }
 
-        if (maxPrice.HasValue)
+        if (query.MaxPrice.HasValue)
         {
-            query = query.Where(v => v.PricePerDay <= maxPrice.Value);
+            vans = vans.Where(v => v.PricePerDay <= query.MaxPrice.Value);
         }
 
-        return query.Select(v => new VanListItemDto(v.Id, v.Name, v.Category, v.PricePerDay));
+        if (query.SellerId.HasValue)
+        {
+            vans = vans.Where(v => v.SellerId == query.SellerId.Value);
+        }
+
+        if (query.IsVisible.HasValue)
+        {
+            vans = vans.Where(v => v.IsVisible == query.IsVisible.Value);
+        }
+
+        var total = await vans.CountAsync();
+        var safePage = Math.Max(1, query.Page);
+        var safePageSize = Math.Clamp(query.PageSize, 1, 100);
+        var pageSkip = (safePage - 1) * safePageSize;
+        var skip = Math.Max(query.Skip, pageSkip);
+
+        var items = await vans
+            .OrderBy(v => v.Name)
+            .Skip(skip)
+            .Take(safePageSize)
+            .Select(v => new VanListItemDto(v.Id, v.Name, v.Category, v.PricePerDay))
+            .ToListAsync();
+
+        return new PagedResult<VanListItemDto>(items, total, safePage, safePageSize, skip);
     }
 
-    public VanDetailsDto? GetById(Guid id)
+    public async Task<VanDetailsDto?> GetById(Guid id)
     {
-        var van = store.Vans.FirstOrDefault(v => v.Id == id);
+        var van = await db.Vans.FirstOrDefaultAsync(v => v.Id == id);
         return van is null
             ? null
             : new VanDetailsDto(van.Id, van.Name, van.PricePerDay, van.FullDescription, van.IsAvailable, van.NumberAvailable);
     }
 
-    public SellerVanDetailsDto? GetSellerVan(Guid id)
+    public async Task<SellerVanDetailsDto?> GetSellerVan(Guid id)
     {
-        var van = store.Vans.FirstOrDefault(v => v.Id == id);
+        var van = await db.Vans.Include(v => v.Photos).FirstOrDefaultAsync(v => v.Id == id);
         return van is null
             ? null
-            : new SellerVanDetailsDto(van.Id, van.Name, van.Category, van.FullDescription, van.IsVisible, van.PricePerDay, van.Photos);
+            : new SellerVanDetailsDto(van.Id, van.Name, van.Category, van.FullDescription, van.IsVisible, van.PricePerDay, van.Photos.Select(x => x.Url).ToList());
     }
 
-    public object RentVan(Guid vanId, int days)
+    public async Task<object> RentVan(Guid vanId, int days)
     {
-        var van = store.Vans.FirstOrDefault(v => v.Id == vanId);
+        var van = await db.Vans.FirstOrDefaultAsync(v => v.Id == vanId);
         if (van is null)
         {
             return new { success = false, message = "Van not found." };
@@ -65,7 +89,7 @@ public class VanService(InMemoryStore store)
         van.NumberAvailable -= 1;
         van.IsAvailable = van.NumberAvailable > 0;
 
-        store.Transactions.Add(new Transaction
+        db.Transactions.Add(new Transaction
         {
             Id = Guid.NewGuid(),
             SellerId = van.SellerId,
@@ -73,6 +97,7 @@ public class VanService(InMemoryStore store)
             Price = totalPrice,
             Date = DateTime.UtcNow
         });
+        await db.SaveChangesAsync();
 
         return new
         {
@@ -82,13 +107,6 @@ public class VanService(InMemoryStore store)
             days,
             totalPrice
         };
-    }
-
-    public IEnumerable<VanListItemDto> GetSellerVans(Guid sellerId)
-    {
-        return store.Vans
-            .Where(v => v.SellerId == sellerId)
-            .Select(v => new VanListItemDto(v.Id, v.Name, v.Category, v.PricePerDay));
     }
 }
 

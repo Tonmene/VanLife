@@ -1,26 +1,23 @@
+using Microsoft.EntityFrameworkCore;
 using VanLife.Api.Data;
+using VanLife.Api.Models;
 
 namespace VanLife.Api.Services;
 
-public class DashboardService(InMemoryStore store)
+public class DashboardService(AppDbContext db, VanService vanService, IncomeService incomeService)
 {
-    public object GetSellerIncome(Guid sellerId, int? days)
+    public async Task<object> GetSellerSummary(Guid sellerId, TransactionQuery query, VanQuery vanQuery)
     {
-        var query = store.Transactions.Where(t => t.SellerId == sellerId);
-        if (days.HasValue)
-        {
-            var from = DateTime.UtcNow.AddDays(-days.Value);
-            query = query.Where(t => t.Date >= from);
-        }
+        vanQuery.SellerId = sellerId;
+        var vans = await vanService.GetAll(vanQuery);
 
-        var list = query.OrderByDescending(t => t.Date).ToList();
+        query.SellerId = sellerId;
+        var transactions = await incomeService.GetTransactions(query);
+        var totalIncome = await db.Transactions
+            .Where(t => t.SellerId == sellerId)
+            .SumAsync(t => (decimal?)t.Price) ?? 0m;
 
-        return new
-        {
-            totalIncome = list.Sum(x => x.Price),
-            totalTransactions = list.Count,
-            transactions = list.Select(x => new { x.Id, x.VanId, x.Price, x.Date })
-        };
+        return new { sellerId, totalIncome, vans, transactions };
     }
 }
 

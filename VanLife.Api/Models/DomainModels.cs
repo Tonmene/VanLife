@@ -31,7 +31,8 @@ public class Van
     public int NumberAvailable { get; set; }
     public bool IsVisible { get; set; } = true;
     public Guid SellerId { get; set; }
-    public List<string> Photos { get; set; } = [];
+    public UserAccount? Seller { get; set; }
+    public List<ImageAsset> Photos { get; set; } = [];
 }
 
 public class UserAccount
@@ -42,6 +43,7 @@ public class UserAccount
     public string Email { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public UserRole Role { get; set; }
+    public List<Van> Vans { get; set; } = [];
 }
 
 public class Review
@@ -66,6 +68,8 @@ public class Transaction
 public class ImageAsset
 {
     public Guid Id { get; set; }
+    public Guid? VanId { get; set; }
+    public Van? Van { get; set; }
     public string FileName { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
     public DateTime UploadedAt { get; set; }

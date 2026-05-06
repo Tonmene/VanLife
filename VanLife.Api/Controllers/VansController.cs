@@ -9,23 +9,30 @@ namespace VanLife.Api.Controllers;
 public class VansController(VanService vanService) : ControllerBase
 {
     [HttpGet]
-    public IActionResult GetAll([FromQuery] VanCategory? category, [FromQuery] decimal? minPrice, [FromQuery] decimal? maxPrice)
+    public async Task<IActionResult> GetAll([FromQuery] VanQuery query)
     {
-        var vans = vanService.GetAll(category, minPrice, maxPrice);
+        var vans = await vanService.GetAll(query);
         return Ok(vans);
     }
 
     [HttpGet("{id:guid}")]
-    public IActionResult GetOne(Guid id)
+    public async Task<IActionResult> GetOne(Guid id)
     {
-        var van = vanService.GetById(id);
+        var van = await vanService.GetById(id);
+        return van is null ? NotFound(new { message = "Van not found." }) : Ok(van);
+    }
+
+    [HttpGet("{id:guid}/management")]
+    public async Task<IActionResult> GetSellerVanDetails(Guid id)
+    {
+        var van = await vanService.GetSellerVan(id);
         return van is null ? NotFound(new { message = "Van not found." }) : Ok(van);
     }
 
     [HttpPost("{id:guid}/rent")]
-    public IActionResult Rent(Guid id, [FromQuery] int days = 1)
+    public async Task<IActionResult> Rent(Guid id, [FromQuery] int days = 1)
     {
-        var result = vanService.RentVan(id, days);
+        var result = await vanService.RentVan(id, days);
         return Ok(result);
     }
 }

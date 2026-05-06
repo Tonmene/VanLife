@@ -8,14 +8,10 @@ namespace VanLife.Api.Controllers;
 [Route("api/reviews")]
 public class ReviewsController(ReviewService reviewService) : ControllerBase
 {
-    [HttpGet("users/{userId:guid}")]
-    public IActionResult GetUserReviews(
-        Guid userId,
-        [FromQuery] DateTime? startDate,
-        [FromQuery] DateTime? endDate,
-        [FromQuery] ReviewType? reviewType)
+    [HttpGet]
+    public async Task<IActionResult> GetUserReviews([FromQuery] ReviewQuery query)
     {
-        return Ok(reviewService.GetUserReviews(userId, startDate, endDate, reviewType));
+        return Ok(await reviewService.GetUserReviews(query));
     }
 }
 
