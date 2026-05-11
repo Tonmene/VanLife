@@ -10,7 +10,7 @@ public enum UserRole
 {
     Buyer,
     Seller,
-    Admin
+
 }
 
 public enum ReviewType
@@ -31,8 +31,8 @@ public class Van
     public int NumberAvailable { get; set; }
     public bool IsVisible { get; set; } = true;
     public Guid SellerId { get; set; }
-    public UserAccount? Seller { get; set; }
-    public List<ImageAsset> Photos { get; set; } = [];
+    public Seller? Seller { get; set; }
+    public List<ImageAsset> Photos { get; set; } = new();
 }
 
 public class UserAccount
@@ -40,10 +40,20 @@ public class UserAccount
     public Guid Id { get; set; }
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
+    // Username for login/display
+    public string Username { get; set; } = string.Empty;
+    // National ID (NIN/BVN) or other government id
+    public string IdNumber { get; set; } = string.Empty;
+    // Home address
+    public string Address { get; set; } = string.Empty;
+    // Primary phone number
+    public string Phone { get; set; } = string.Empty;
+    // Next of kin contact for emergencies
+    public string NextOfKin { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public UserRole Role { get; set; }
-    public List<Van> Vans { get; set; } = [];
+    // UserAccount no longer directly owns Vans; separate Seller table is used for seller-specific data
 }
 
 public class Review
@@ -73,5 +83,38 @@ public class ImageAsset
     public string FileName { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
     public DateTime UploadedAt { get; set; }
+}
+
+// Separate seller table containing minimal seller info
+public class Seller
+{
+    public Guid SellerId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    // Seller's vans
+    public List<Van> Vans { get; set; } = new();
+    // Rentals associated with this seller
+    public List<Rental> Rentals { get; set; } = new();
+}
+
+// Separate buyer table containing minimal buyer info
+public class Buyer
+{
+    public Guid BuyerId { get; set; }
+    public string Username { get; set; } = string.Empty;
+    // Rentals associated with this buyer
+    public List<Rental> Rentals { get; set; } = new();
+}
+
+// Rental table that links sellers, buyers and vans
+public class Rental
+{
+    public Guid PurchaseId { get; set; }
+    public Guid SellerId { get; set; }
+    public Seller? Seller { get; set; }
+    public Guid BuyerId { get; set; }
+    public Buyer? Buyer { get; set; }
+    public Guid VanId { get; set; }
+    public Van? Van { get; set; }
+    public DateTime PurchasedAt { get; set; }
 }
 

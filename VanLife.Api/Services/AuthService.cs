@@ -24,6 +24,11 @@ public class AuthService(AppDbContext db)
             Id = Guid.NewGuid(),
             FirstName = request.FirstName,
             LastName = request.LastName,
+            Username = request.Username,
+            IdNumber = request.IdNumber,
+            Address = request.Address,
+            Phone = request.Phone,
+            NextOfKin = request.NextOfKin,
             Email = request.Email,
             Password = request.Password,
             Role = request.Role
@@ -39,7 +44,7 @@ public class AuthService(AppDbContext db)
         var user = await db.Users.FirstOrDefaultAsync(u =>
             u.Email.ToLower() == request.Email.ToLower() &&
             u.Password == request.Password &&
-            u.Role == request.Role);
+            (u.Role == request.Role));
 
         if (user is null)
         {
