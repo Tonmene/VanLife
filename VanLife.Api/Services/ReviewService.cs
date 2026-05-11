@@ -6,18 +6,30 @@ namespace VanLife.Api.Services;
 
 public class ReviewService(AppDbContext db)
 {
+    private static DateTime NormalizeToUtc(DateTime value)
+    {
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+    }
+
     public async Task<object> GetUserReviews(ReviewQuery query)
     {
         var reviews = db.Reviews.Where(r => r.TargetUserId == query.UserId);
 
         if (query.StartDate.HasValue)
         {
-            reviews = reviews.Where(r => r.Date >= query.StartDate.Value);
+            var startUtc = NormalizeToUtc(query.StartDate.Value);
+            reviews = reviews.Where(r => r.Date >= startUtc);
         }
 
         if (query.EndDate.HasValue)
         {
-            reviews = reviews.Where(r => r.Date <= query.EndDate.Value);
+            var endUtc = NormalizeToUtc(query.EndDate.Value);
+            reviews = reviews.Where(r => r.Date <= endUtc);
         }
 
         var filtered = await reviews.ToListAsync();

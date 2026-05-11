@@ -1,5 +1,6 @@
 @VanLife.Api_HostAddress = https://localhost:7250
 @SellerId = 2cb91a52-42b5-4f59-9f3a-a96925f90488
+@BuyerId = 73a10d33-7da4-4f0a-b58d-0d0efc5e70e3
 @UserId = {{SellerId}}
 @VanId = 00000000-0000-0000-0000-000000000000
 @ImageId = 00000000-0000-0000-0000-000000000000
@@ -8,19 +9,57 @@
 GET {{VanLife.Api_HostAddress}}/api/vans?page=1&pageSize=5&skip=0&category=Luxury&minPrice=50&maxPrice=300
 Accept: application/json
 
+### Search vans (reuse list endpoint with query param)
+GET {{VanLife.Api_HostAddress}}/api/vans?query=luxury+solar&page=1&pageSize=10
+Accept: application/json
+
 ### Van details (copy VanId from list)
+## Paste the van GUID below (replace the zeros) to run this request:
+@VanId = fa070bb9-47e9-4d40-b0dd-e2d387238899
 GET {{VanLife.Api_HostAddress}}/api/vans/{{VanId}}
 Accept: application/json
 
 ### Van management details
 GET {{VanLife.Api_HostAddress}}/api/vans/{{VanId}}/management
+X-User-Id: {{SellerId}}
 Accept: application/json
 
-### Rent van
-POST {{VanLife.Api_HostAddress}}/api/vans/{{VanId}}/rent?days=3
+### Seller - create a new van (set X-User-Id header to seller id)
+POST {{VanLife.Api_HostAddress}}/api/vans/seller/vans
+Content-Type: application/json
+X-User-Id: {{SellerId}}
 Accept: application/json
 
-###
+{
+  "name": "Cozy Camper",
+  "category": "Simple",
+  "pricePerDay": 95,
+  "fullDescription": "Small camper with kitchen and bed.",
+  "numberAvailable": 2
+}
+
+### Seller - update a van
+PUT {{VanLife.Api_HostAddress}}/api/vans/seller/vans/{{VanId}}
+Content-Type: application/json
+X-User-Id: {{SellerId}}
+Accept: application/json
+
+{
+  "pricePerDay": 99,
+  "numberAvailable": 3
+}
+
+### Seller - toggle availability / set inventory
+PATCH {{VanLife.Api_HostAddress}}/api/vans/seller/vans/{{VanId}}/availability
+Content-Type: application/json
+X-User-Id: {{SellerId}}
+Accept: application/json
+
+{
+  "isAvailable": true,
+  "numberAvailable": 3
+}
+
 ### Auth - sign up
 POST {{VanLife.Api_HostAddress}}/api/auth/signup
 Content-Type: application/json
@@ -29,6 +68,11 @@ Accept: application/json
 {
   "firstName": "Daisy",
   "lastName": "Sophia",
+  "username": "daisy",
+  "idNumber": "NIN1234567890",
+  "address": "123 Main St",
+  "phone": "555-0100",
+  "nextOfKin": "Jane Sophia",
   "email": "daisy@example.com",
   "password": "Password123!",
   "confirmPassword": "Password123!",
@@ -64,6 +108,20 @@ Accept: application/json
   "email": "buyer@vanlife.com",
   "newPassword": "NewBuyer123!",
   "confirmPassword": "NewBuyer123!"
+}
+
+### Rent van
+POST {{VanLife.Api_HostAddress}}/api/vans/{{VanId}}/rent
+Content-Type: application/json
+X-User-Id: {{BuyerId}}
+Accept: application/json
+
+{
+  "days": 3,
+  "destination": "Abuja",
+  "contact": "555-0100",
+  "paymentToken": "fake-payment-token",
+  "cautionFee": 50
 }
 
 ###

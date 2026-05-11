@@ -10,6 +10,20 @@ public class VanService(AppDbContext db)
     {
         var vans = db.Vans.AsQueryable();
 
+        // Public listing defaults to visible vans only unless explicitly overridden.
+        if (!query.IsVisible.HasValue)
+        {
+            vans = vans.Where(v => v.IsVisible);
+        }
+
+        // If a free-text query is provided, match against Name and FullDescription
+        if (!string.IsNullOrWhiteSpace(query.Query))
+        {
+            var q = query.Query.Trim().ToLower();
+            vans = vans.Where(v => v.Name.ToLower().Contains(q) || v.FullDescription.ToLower().Contains(q));
+        }
+
+
         if (query.Category.HasValue)
         {
             vans = vans.Where(v => v.Category == query.Category.Value);
@@ -59,15 +73,109 @@ public class VanService(AppDbContext db)
             : new VanDetailsDto(van.Id, van.Name, van.PricePerDay, van.FullDescription, van.IsAvailable, van.NumberAvailable);
     }
 
-    public async Task<SellerVanDetailsDto?> GetSellerVan(Guid id)
+    public async Task<SellerVanDetailsDto?> GetSellerVan(Guid sellerId, Guid vanId)
     {
-        var van = await db.Vans.Include(v => v.Photos).FirstOrDefaultAsync(v => v.Id == id);
+        var isSeller = await db.Users.AnyAsync(u => u.Id == sellerId && u.Role == UserRole.Seller);
+        if (!isSeller) return null;
+
+        var van = await db.Vans
+            .Include(v => v.Photos)
+            .FirstOrDefaultAsync(v => v.Id == vanId && v.SellerId == sellerId);
         return van is null
             ? null
             : new SellerVanDetailsDto(van.Id, van.Name, van.Category, van.FullDescription, van.IsVisible, van.PricePerDay, van.Photos.Select(x => x.Url).ToList());
     }
 
-    public async Task<object> RentVan(Guid vanId, int days)
+    public async Task<object> CreateVan(Guid sellerId, CreateVanRequest request)
+    {
+        // Ensure seller exists and has seller role
+        var seller = await db.Users.FirstOrDefaultAsync(u => u.Id == sellerId && u.Role == UserRole.Seller);
+        if (seller is null)
+        {
+            return new { success = false, message = "Seller not found or not authorized." };
+        }
+
+        var van = new Van
+        {
+            Id = Guid.NewGuid(),
+            Name = request.Name,
+            Category = request.Category,
+            PricePerDay = request.PricePerDay,
+            FullDescription = request.FullDescription,
+            NumberAvailable = request.NumberAvailable,
+            IsAvailable = request.NumberAvailable > 0,
+            IsVisible = true,
+            SellerId = sellerId
+        };
+
+        db.Vans.Add(van);
+        await db.SaveChangesAsync();
+
+        return new CreateResult(true, "Van created.", van.Id);
+    }
+
+    public async Task<object> UpdateVan(Guid sellerId, Guid vanId, UpdateVanRequest request)
+    {
+        var isSeller = await db.Users.AnyAsync(u => u.Id == sellerId && u.Role == UserRole.Seller);
+        if (!isSeller)
+        {
+            return new { success = false, message = "Seller not found or not authorized." };
+        }
+
+        var van = await db.Vans.FirstOrDefaultAsync(v => v.Id == vanId && v.SellerId == sellerId);
+        if (van is null)
+        {
+            return new { success = false, message = "Van not found or not owned by seller." };
+        }
+
+        if (request.Name is not null) van.Name = request.Name;
+        if (request.Category.HasValue) van.Category = request.Category.Value;
+        if (request.PricePerDay.HasValue) van.PricePerDay = request.PricePerDay.Value;
+        if (request.FullDescription is not null) van.FullDescription = request.FullDescription;
+        if (request.NumberAvailable.HasValue)
+        {
+            if (request.NumberAvailable.Value < 0)
+            {
+                return new { success = false, message = "NumberAvailable cannot be negative." };
+            }
+            van.NumberAvailable = request.NumberAvailable.Value;
+            van.IsAvailable = van.NumberAvailable > 0;
+        }
+        if (request.IsVisible.HasValue) van.IsVisible = request.IsVisible.Value;
+
+        await db.SaveChangesAsync();
+        return new OperationResult(true, "Van updated.");
+    }
+
+    public async Task<bool> UpdateAvailability(Guid sellerId, Guid vanId, bool isAvailable, int? numberAvailable)
+    {
+        var isSeller = await db.Users.AnyAsync(u => u.Id == sellerId && u.Role == UserRole.Seller);
+        if (!isSeller) return false;
+
+        var van = await db.Vans.FirstOrDefaultAsync(v => v.Id == vanId && v.SellerId == sellerId);
+        if (van is null) return false;
+
+        van.IsAvailable = isAvailable;
+        if (numberAvailable.HasValue)
+        {
+            if (numberAvailable.Value < 0) return false;
+            van.NumberAvailable = numberAvailable.Value;
+        }
+        await db.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<PagedResult<VanListItemDto>> GetSellerInventory(Guid sellerId, VanQuery query)
+    {
+        var isSeller = await db.Users.AnyAsync(u => u.Id == sellerId && u.Role == UserRole.Seller);
+        if (!isSeller) return new PagedResult<VanListItemDto>(Array.Empty<VanListItemDto>(), 0, 1, 10, 0);
+
+        query.SellerId = sellerId;
+        query.IsVisible = null; // sellers can see their full inventory
+        return await GetAll(query);
+    }
+
+    public async Task<object> RentVan(Guid vanId, Guid buyerId, RentRequest request)
     {
         var van = await db.Vans.FirstOrDefaultAsync(v => v.Id == vanId);
         if (van is null)
@@ -75,26 +183,63 @@ public class VanService(AppDbContext db)
             return new { success = false, message = "Van not found." };
         }
 
+        // Enforce: seller must have an account (and be a seller)
+        var seller = await db.Users.FirstOrDefaultAsync(u => u.Id == van.SellerId && u.Role == UserRole.Seller);
+        if (seller is null)
+        {
+            return new { success = false, message = "This van's seller does not have a valid seller account." };
+        }
+
+        // Enforce: buyer must have an account (and be a buyer)
+        var buyer = await db.Users.FirstOrDefaultAsync(u => u.Id == buyerId && u.Role == UserRole.Buyer);
+        if (buyer is null)
+        {
+            return new { success = false, message = "Buyer must have an account before renting. Please sign up first." };
+        }
+
+        // Basic availability check
         if (!van.IsAvailable || van.NumberAvailable < 1)
         {
             return new { success = false, message = "Van is not currently available." };
         }
-
-        if (days < 1)
+        if (request.Days < 1)
         {
             return new { success = false, message = "Days must be at least 1." };
         }
 
-        var totalPrice = van.PricePerDay * days;
+        // Payment and caution checks (placeholder - integrate with gateway in production)
+        if (string.IsNullOrWhiteSpace(request.PaymentToken))
+        {
+            return new { success = false, message = "Payment required." };
+        }
+
+        if (request.CautionFee < 0)
+        {
+            return new { success = false, message = "Caution fee cannot be negative." };
+        }
+
+        var rentFee = van.PricePerDay * request.Days;
+        var totalDue = rentFee + request.CautionFee;
+
+        // Deduct availability
         van.NumberAvailable -= 1;
         van.IsAvailable = van.NumberAvailable > 0;
+
+        db.Rentals.Add(new Rental
+        {
+            PurchaseId = Guid.NewGuid(),
+            SellerId = van.SellerId,
+            BuyerId = buyer.Id,
+            VanId = van.Id,
+            PurchasedAt = DateTime.UtcNow
+        });
 
         db.Transactions.Add(new Transaction
         {
             Id = Guid.NewGuid(),
             SellerId = van.SellerId,
             VanId = van.Id,
-            Price = totalPrice,
+            Price = totalDue,
             Date = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
@@ -104,8 +249,10 @@ public class VanService(AppDbContext db)
             success = true,
             message = "Van rented successfully.",
             vanId,
-            days,
-            totalPrice
+            days = request.Days,
+            rentFee,
+            cautionFee = request.CautionFee,
+            totalDue
         };
     }
 }

@@ -12,12 +12,11 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
+builder.Services.AddSwaggerGen();
 
-// Default to in-memory database. To use PostgreSQL, install a compatible Npgsql EF Core provider
-// and replace this registration with UseNpgsql(connectionString).
+// PostgreSQL (Npgsql)
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseInMemoryDatabase("VanLife"));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<VanService>();
@@ -30,7 +29,8 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
@@ -39,6 +39,7 @@ app.MapControllers();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
     await DbSeeder.SeedAsync(db);
 }
 
